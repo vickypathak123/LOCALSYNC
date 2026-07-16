@@ -53,7 +53,7 @@ export default function AgentLoginPage() {
 
       <div className="w-full max-w-sm rounded-2xl border border-border bg-white p-6 shadow-elevation-3 dark:border-slate-800 dark:bg-slate-900">
         <p className="mb-4 text-sm text-muted-foreground dark:text-slate-400">
-          Use the email and temporary password from your invite email. You'll be asked to set your own
+          Use the email and temporary password from your invite email. You’ll be asked to set your own
           password right after.
         </p>
 

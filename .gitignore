@@ -10,7 +10,7 @@ apps/*/.env.local
 apps/*/.env.*.local
 
 # Next.js
-apps/*/.next/
+apps/*/.next*/
 apps/*/out/
 
 # TypeScript build info / compiled output

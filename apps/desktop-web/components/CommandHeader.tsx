@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Avatar from './Avatar';
-import { ShieldIcon, BellIcon, ChevronDownIcon, LogoutIcon, TargetIcon } from './icons';
+import { ShieldIcon, BellIcon, ChevronDownIcon, LogoutIcon, TargetIcon, MenuIcon } from './icons';
+import ThemeToggle from './ThemeToggle';
 import type { ToastMessage } from './Toast';
 import { useClickOutside } from '@/lib/useClickOutside';
 
@@ -16,6 +17,7 @@ interface CommandHeaderProps {
   notifications: ToastMessage[];
   unreadCount: number;
   onOpenNotifications: () => void;
+  onOpenMenu: () => void;
   onOpenOrg: () => void;
   onOpenInvite: () => void;
   onLogout: () => void;
@@ -40,6 +42,7 @@ export default function CommandHeader({
   notifications,
   unreadCount,
   onOpenNotifications,
+  onOpenMenu,
   onOpenOrg,
   onOpenInvite,
   onLogout,
@@ -59,8 +62,16 @@ export default function CommandHeader({
   const recent = [...notifications].slice(-8).reverse();
 
   return (
-    <header className="flex items-center gap-5 border-b border-border bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center gap-2.5">
+    <header className="flex min-w-0 items-center gap-2 border-b border-border bg-white px-3 py-3 sm:gap-4 sm:px-5 dark:border-slate-800 dark:bg-slate-900">
+      <button
+        type="button"
+        onClick={onOpenMenu}
+        aria-label="Open navigation"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground lg:hidden dark:border-slate-700"
+      >
+        <MenuIcon className="h-5 w-5" />
+      </button>
+      <div className="hidden items-center gap-2.5 sm:flex">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-on-primary shadow-elevation-1">
           <TargetIcon className="h-5 w-5" />
         </div>
@@ -96,10 +107,12 @@ export default function CommandHeader({
         <button
           type="button"
           onClick={onOpenInvite}
-          className="cursor-pointer rounded-lg bg-primary px-3.5 py-2 text-sm font-semibold text-on-primary shadow-elevation-1 transition-colors hover:bg-primary-hover"
+          className="min-h-9 cursor-pointer rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-on-primary shadow-elevation-1 transition-colors hover:bg-primary-hover sm:px-3.5 sm:text-sm"
         >
-          + Invite Agent
+          <span className="sm:hidden">Invite</span><span className="hidden sm:inline">+ Invite Agent</span>
         </button>
+
+        <ThemeToggle />
 
         <div className="relative" ref={notifRef}>
           <button

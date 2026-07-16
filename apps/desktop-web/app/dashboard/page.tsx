@@ -16,6 +16,7 @@ import {
   deleteAgent,
   getOrgMe,
   getOrgTasks,
+  listOrgAgents,
   type OrgInfo,
   type UpdateAgentPayload,
 } from '@/lib/api';
@@ -25,6 +26,10 @@ import type { ActivityEvent } from '@/lib/activity';
 import { APPROACH_RADIUS_MULTIPLIER } from '@/lib/agentStatus';
 import { isToday } from '@/lib/format';
 import CommandHeader from '@/components/CommandHeader';
+import DashboardHome from '@/components/DashboardHome';
+import AgentDirectory from '@/components/AgentDirectory';
+import TaskDirectory from '@/components/TaskDirectory';
+import DashboardSidebar, { type DashboardSection } from '@/components/DashboardSidebar';
 import AgentRosterList from '@/components/AgentRosterList';
 import TaskRosterList from '@/components/TaskRosterList';
 import ActivityFeed from '@/components/ActivityFeed';
@@ -71,6 +76,10 @@ export default function DashboardPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const [activeSection, setActiveSection] = useState<DashboardSection>('dashboard');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   const prevOnlineRef = useRef<Record<string, boolean>>({});
   const hasSyncedOnceRef = useRef(false);
@@ -118,45 +127,47 @@ export default function DashboardPage() {
     setLocalSession(s);
   }, [router]);
 
-  useEffect(() => {
+  const loadDashboardData = useCallback(async () => {
     if (!session) return;
-    getOrgMe(session.token).then(setOrgInfo).catch(() => {
-      // A token minted before the org existed (or an expired one) has no valid
-      // orgId claim server-side, even though the local session object still has
-      // orgId cached. Rather than leave the UI stuck on "Loading…" forever,
-      // force a clean re-login so a fresh, correct token gets minted.
-      clearSession();
-      router.replace('/login');
-    });
-  }, [session, router]);
+    setDashboardLoading(true);
+    setDashboardError(null);
 
-  // Rehydrate every task this org has ever dispatched on load (task hashes never
-  // expire in Redis) — this is what makes a refresh restore in-flight
-  // destinations/routes/status instead of the dashboard only knowing about
-  // whatever socket events happened to arrive after the tab reopened.
-  useEffect(() => {
-    if (!session) return;
-    getOrgTasks(session.token)
-      .then((tasks) => {
-        setTasksById((prev) => {
-          const seeded: Record<string, TaskUI> = {};
-          for (const task of tasks) seeded[task.taskId] = task;
-          // Anything already patched by a socket event that beat this fetch wins —
-          // it's strictly fresher than the REST snapshot.
-          return { ...seeded, ...prev };
-        });
-        // Use the real server-stamped timestamps (not a guess from status) to mark
-        // which milestones already happened, so the feed doesn't re-announce them —
-        // "Approaching Zone" is deliberately left unseeded: it's a session-local
-        // derived signal with no backend timestamp, and suppressing it here would
-        // hide a legitimately fresh signal right after a reload.
-        for (const task of tasks) {
-          if (task.acceptedAt) acceptedTaskIdsRef.current.add(task.taskId);
-          if (task.reachedAt) reachedTaskIdsRef.current.add(task.taskId);
+    try {
+      const [org, tasks, orgAgents] = await Promise.all([
+        getOrgMe(session.token),
+        getOrgTasks(session.token),
+        listOrgAgents(session.token),
+      ]);
+
+      setOrgInfo(org);
+      setAgents((current) => {
+        const merged = new Map(orgAgents.map((agent) => [agent.agentId, agent]));
+        for (const agent of current) {
+          const serverAgent = merged.get(agent.agentId);
+          if (!serverAgent || agent.updatedAt > serverAgent.updatedAt) merged.set(agent.agentId, agent);
         }
-      })
-      .catch((err) => console.error('[dashboard] failed to load org tasks:', err));
+        return [...merged.values()];
+      });
+      setTasksById((current) => {
+        const seeded: Record<string, TaskUI> = {};
+        for (const task of tasks) seeded[task.taskId] = task;
+        return { ...seeded, ...current };
+      });
+
+      for (const task of tasks) {
+        if (task.acceptedAt) acceptedTaskIdsRef.current.add(task.taskId);
+        if (task.reachedAt) reachedTaskIdsRef.current.add(task.taskId);
+      }
+    } catch (err) {
+      setDashboardError(err instanceof Error ? err.message : 'Unable to load dashboard data.');
+    } finally {
+      setDashboardLoading(false);
+    }
   }, [session]);
+
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
 
   useEffect(() => {
     if (!session) return;
@@ -481,6 +492,39 @@ export default function DashboardPage() {
   function handleViewHistory(agent: Agent) {
     setLeftTab('tasks');
     setSearchQuery(agent.name);
+    setActiveSection('tasks');
+  }
+
+  function handleSidebarNavigate(section: DashboardSection) {
+    if (section === 'organization') {
+      setActiveSection(section);
+      setOrgModalOpen(true);
+      return;
+    }
+    if (section === 'settings') {
+      setActiveSection(section);
+      pushToast('Settings', 'Settings are not available in the current API yet.');
+      return;
+    }
+    if (section === 'agents') {
+      setLeftTab('agents');
+      setSearchQuery('');
+    }
+    if (section === 'tasks') {
+      setLeftTab('tasks');
+      setSearchQuery('');
+    }
+    setActiveSection(section);
+  }
+
+  function openAgentFromDashboard(agentId: string) {
+    setSelectedAgentId(agentId);
+    setLeftTab('agents');
+    setActiveSection('agents');
+  }
+
+  function showReportsPlaceholder() {
+    pushToast('Reports', 'Performance reports are coming soon; no reporting API is configured yet.');
   }
 
   function handleLogout() {
@@ -495,119 +539,108 @@ export default function DashboardPage() {
   const activeCount = agents.filter((a) => a.online && a.currentTaskId).length;
   const todayCount = Object.values(tasksById).filter((t) => isToday(t.createdAt)).length;
 
+  const showDashboardHome = activeSection === 'dashboard' || activeSection === 'organization' || activeSection === 'settings';
+
   return (
-    <main className="flex h-dvh flex-col bg-background dark:bg-slate-950">
-      <CommandHeader
-        orgName={orgInfo?.name}
-        orgCode={orgInfo?.inviteCode}
+    <main className="flex h-dvh min-w-0 overflow-hidden bg-background dark:bg-slate-950">
+      <DashboardSidebar
+        activeSection={activeSection}
+        mobileOpen={mobileSidebarOpen}
         ownerName={session.ownerName}
-        onlineCount={onlineCount}
-        activeCount={activeCount}
-        todayCount={todayCount}
-        notifications={notifications}
-        unreadCount={unreadCount}
-        onOpenNotifications={() => setUnreadCount(0)}
-        onOpenOrg={() => setOrgModalOpen(true)}
-        onOpenInvite={() => setInviteModalOpen(true)}
+        onClose={() => setMobileSidebarOpen(false)}
+        onNavigate={handleSidebarNavigate}
         onLogout={handleLogout}
       />
 
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="flex w-80 shrink-0 flex-col border-r border-border bg-white dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex gap-1 border-b border-border p-2 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={() => {
-                setLeftTab('agents');
-                setSearchQuery('');
-              }}
-              className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg py-1.5 text-sm font-semibold transition-colors ${
-                leftTab === 'agents'
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted dark:hover:bg-slate-800'
-              }`}
-            >
-              <UsersIcon className="h-4 w-4" />
-              Agents
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setLeftTab('tasks');
-                setSearchQuery('');
-              }}
-              className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg py-1.5 text-sm font-semibold transition-colors ${
-                leftTab === 'tasks'
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted dark:hover:bg-slate-800'
-              }`}
-            >
-              <TaskIcon className="h-4 w-4" />
-              Tasks
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-hidden">
-            {leftTab === 'agents' ? (
-              <AgentRosterList
-                agents={filteredAgents}
-                pendingApprovalAgents={pendingApprovalAgents}
-                tasksById={tasksById}
-                selectedAgentId={selectedAgentId}
-                onSelectAgent={setSelectedAgentId}
-                onApprove={handleApprove}
-                onReject={handleReject}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-              />
-            ) : (
-              <TaskRosterList
-                tasks={filteredTasks}
-                agents={agents}
-                selectedAgentId={selectedAgentId}
-                onSelectAgent={setSelectedAgentId}
-                onNewTask={openNewTask}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-              />
-            )}
-          </div>
-        </aside>
-
-        <div className="relative flex-1">
-          <MapView
+      <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {showDashboardHome ? (
+          <DashboardHome
+            ownerName={session.ownerName}
+            orgName={orgInfo?.name}
             agents={agents}
             tasksById={tasksById}
-            selectedAgentId={selectedAgentId}
-            onSelectAgent={setSelectedAgentId}
-            pickMode={pickMode}
-            pickedLocation={pickedLocation}
-            onPickLocation={handlePickLocation}
+            events={events}
+            unreadCount={unreadCount}
+            loading={dashboardLoading}
+            error={dashboardError}
+            onRetry={() => void loadDashboardData()}
+            onOpenMenu={() => setMobileSidebarOpen(true)}
+            onOpenLive={() => setActiveSection('live')}
+            onAssignTask={openNewTask}
+            onInviteAgent={() => setInviteModalOpen(true)}
+            onViewReports={showReportsPlaceholder}
+            onViewTasks={() => handleSidebarNavigate('tasks')}
+            onViewAgents={() => handleSidebarNavigate('agents')}
+            onSelectAgent={openAgentFromDashboard}
           />
-          <div className="pointer-events-none absolute left-4 top-4 z-[500] rounded-full border border-border bg-white/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-elevation-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-100">
-            <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-status-available" />
-            Live · {onlineCount} online
-          </div>
-        </div>
-
-        <aside className="flex w-96 shrink-0 flex-col border-l border-border bg-white dark:border-slate-800 dark:bg-slate-900">
-          {selectedAgent ? (
-            <AgentDetailsPanel
-              agent={selectedAgent}
-              task={selectedTask}
-              onClose={() => setSelectedAgentId(null)}
-              onAssignTask={() => openDispatchFor(selectedAgent.agentId)}
-              onViewHistory={() => handleViewHistory(selectedAgent)}
-              onEdit={() => setEditAgentTarget(selectedAgent)}
-              onResendInvite={() => handleResendInvite(selectedAgent.agentId)}
-              onToggleArchive={() => handleToggleArchive(selectedAgent)}
-              onDelete={() => setDeleteAgentTarget(selectedAgent)}
+        ) : activeSection === 'agents' ? (
+          <AgentDirectory
+            onOpenMenu={() => setMobileSidebarOpen(true)}
+            onInviteAgent={() => setInviteModalOpen(true)}
+            onAssignTask={openNewTask}
+            onEditAgent={(agent) => pushToast('Edit agent', `Editing ${agent.name} will be connected when the directory API is available.`)}
+          />
+        ) : activeSection === 'tasks' ? (
+          <TaskDirectory
+            onOpenMenu={() => setMobileSidebarOpen(true)}
+            onCreateTask={openNewTask}
+            onCancelTask={(task) => pushToast('Cancel task', `${task.id} is static preview data and is not connected to the cancellation API.`)}
+          />
+        ) : (
+          <>
+            <CommandHeader
+              orgName={orgInfo?.name}
+              orgCode={orgInfo?.inviteCode}
+              ownerName={session.ownerName}
+              onlineCount={onlineCount}
+              activeCount={activeCount}
+              todayCount={todayCount}
+              notifications={notifications}
+              unreadCount={unreadCount}
+              onOpenMenu={() => setMobileSidebarOpen(true)}
+              onOpenNotifications={() => setUnreadCount(0)}
+              onOpenOrg={() => setOrgModalOpen(true)}
+              onOpenInvite={() => setInviteModalOpen(true)}
+              onLogout={handleLogout}
             />
-          ) : (
-            <ActivityFeed events={events} />
-          )}
-        </aside>
-      </div>
+
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <div className="relative min-w-0 flex-1">
+                <MapView
+                  agents={agents}
+                  tasksById={tasksById}
+                  selectedAgentId={selectedAgentId}
+                  onSelectAgent={setSelectedAgentId}
+                  pickMode={pickMode}
+                  pickedLocation={pickedLocation}
+                  onPickLocation={handlePickLocation}
+                />
+                <div className="pointer-events-none absolute left-4 top-4 z-[500] rounded-full border border-border bg-white/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-elevation-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-100">
+                  <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-status-available" /> Live · {onlineCount} online
+                </div>
+              </div>
+
+              <aside className="hidden w-96 shrink-0 flex-col border-l border-border bg-white xl:flex dark:border-slate-800 dark:bg-slate-900">
+                {selectedAgent ? (
+                  <AgentDetailsPanel
+                    agent={selectedAgent}
+                    task={selectedTask}
+                    onClose={() => setSelectedAgentId(null)}
+                    onAssignTask={() => openDispatchFor(selectedAgent.agentId)}
+                    onViewHistory={() => handleViewHistory(selectedAgent)}
+                    onEdit={() => setEditAgentTarget(selectedAgent)}
+                    onResendInvite={() => handleResendInvite(selectedAgent.agentId)}
+                    onToggleArchive={() => handleToggleArchive(selectedAgent)}
+                    onDelete={() => setDeleteAgentTarget(selectedAgent)}
+                  />
+                ) : (
+                  <ActivityFeed events={events} />
+                )}
+              </aside>
+            </div>
+          </>
+        )}
+      </section>
 
       {dispatchOpen && (
         <DispatchModal

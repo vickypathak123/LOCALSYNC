@@ -203,3 +203,90 @@ export function NavigationIcon({ className = base }: IconProps) {
     </svg>
   );
 }
+
+export function HomeIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 10.5 12 3l8.5 7.5V20a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-9.5Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 21v-7h6v7" />
+    </svg>
+  );
+}
+
+export function SettingsIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <circle cx="12" cy="12" r="3" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.1A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3V9.55h.1A1.7 1.7 0 0 0 4.1 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.56 3.7l.06.06A1.7 1.7 0 0 0 8.5 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1v-.1h4.05v.1a1.7 1.7 0 0 0 1.05 1.7 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.5c.14.4.36.75.66 1 .3.24.68.38 1.07.4h.1v4.05h-.1A1.7 1.7 0 0 0 19.4 15Z" />
+    </svg>
+  );
+}
+
+export function ChartIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 20V5M4 20h16" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="m7 15 3-3 3 2 4-6" />
+    </svg>
+  );
+}
+
+export function PlusCircleIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path strokeLinecap="round" d="M12 8v8M8 12h8" />
+    </svg>
+  );
+}
+
+export function MenuIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <path strokeLinecap="round" d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  );
+}
+
+export function CloseIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <path strokeLinecap="round" d="m6 6 12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+export function ActivityIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 14.5a6 6 0 0 1 5.5 5.5M4 9a11 11 0 0 1 11 11M4 4a16 16 0 0 1 16 16" />
+    </svg>
+  );
+}
+
+export function SunIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <circle cx="12" cy="12" r="3.5" />
+      <path strokeLinecap="round" d="M12 2.5V5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8" />
+    </svg>
+  );
+}
+
+export function MoonIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20.5 15.2A8.5 8.5 0 0 1 8.8 3.5 8.5 8.5 0 1 0 20.5 15.2Z" />
+    </svg>
+  );
+}
+
+export function CalendarIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+      <path strokeLinecap="round" d="M8 3v4M16 3v4M3.5 9.5h17" />
+      <path strokeLinecap="round" d="M8 13h2M14 13h2M8 17h2M14 17h2" />
+    </svg>
+  );
+}

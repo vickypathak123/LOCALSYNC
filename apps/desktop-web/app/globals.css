@@ -46,7 +46,7 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
+html.dark {
   .auth-bg {
     background-color: #020617;
     background-image: radial-gradient(circle at 15% 10%, rgb(37 99 235 / 0.14), transparent 45%),

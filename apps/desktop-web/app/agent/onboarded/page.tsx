@@ -33,7 +33,7 @@ export default function AgentOnboardedPage() {
       </div>
 
       <div>
-        <h1 className="font-display text-2xl font-bold text-foreground dark:text-slate-100">You're all set</h1>
+        <h1 className="font-display text-2xl font-bold text-foreground dark:text-slate-100">You’re all set</h1>
         <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground dark:text-slate-400">
           Your account is active and assigned to your organization. Open the LocalSync mobile app and sign in
           with your email and new password to go online and start receiving tasks.

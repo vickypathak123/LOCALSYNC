@@ -33,7 +33,7 @@ export default function InviteAgentModal({ onClose, onSubmit }: InviteAgentModal
           <div>
             <h2 className="font-display text-lg text-foreground dark:text-slate-100">Invite Agent</h2>
             <p className="text-sm text-muted-foreground dark:text-slate-400">
-              We'll email them a temporary password to sign in and get started.
+              We’ll email them a temporary password to sign in and get started.
             </p>
           </div>
           <button
