@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Environment variables (secrets) — .env.example is the committed template
+.env
+.env.local
+.env.*.local
+apps/*/.env
+apps/*/.env.local
+apps/*/.env.*.local
+
+# Next.js
+apps/*/.next/
+apps/*/out/
+
+# TypeScript build info / compiled output
+*.tsbuildinfo
+apps/*/dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS/editor cruft
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Python bytecode cache (e.g. from .claude/skills scripts)
+__pycache__/
+*.pyc
+
+# Redis local data dump (if run outside Docker)
+dump.rdb

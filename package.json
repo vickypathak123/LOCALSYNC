@@ -1,0 +1,13 @@
+{
+  "name": "localsync-core",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/backend",
+    "dev:core": "npm run dev --workspace=apps/backend",
+    "dev:web": "npm run dev --workspace=apps/desktop-web"
+  }
+}
