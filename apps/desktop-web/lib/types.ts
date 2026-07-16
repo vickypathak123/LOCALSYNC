@@ -7,6 +7,8 @@ export type {
   TaskPriority,
   RoadRoute,
   TaskDelayStatus,
+  GeocodeResult,
+  GeocodeSuggestion,
 } from '../../../packages/shared-types';
 export { computeTaskDelayStatus, DELAY_GRACE_PERIOD_MINUTES } from '../../../packages/shared-types';
 import type { Task } from '../../../packages/shared-types';

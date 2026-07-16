@@ -51,6 +51,27 @@ export interface Task {
   delayReason: string | null;
 }
 
+// A resolved location — the end result of a geocoding lookup, with real
+// coordinates. Returned by GET /api/geocode/retrieve.
+export interface GeocodeResult {
+  label: string;
+  lat: number;
+  lng: number;
+}
+
+// One row of GET /api/geocode/suggest's typeahead dropdown. Mapbox's Search
+// Box API (the primary provider) doesn't return coordinates at suggest time —
+// only `id`, resolved via a follow-up GET /api/geocode/retrieve?id=... — so
+// lat/lng are optional here. The Nominatim fallback has no such two-step
+// split and includes them directly, letting callers skip the retrieve round
+// trip whenever they're already present.
+export interface GeocodeSuggestion {
+  id: string;
+  label: string;
+  lat?: number;
+  lng?: number;
+}
+
 export const DELAY_GRACE_PERIOD_MINUTES = 15;
 
 export type TaskDelayStatus = 'on_time' | 'grace_period' | 'delayed';

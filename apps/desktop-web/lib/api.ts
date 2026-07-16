@@ -1,4 +1,4 @@
-import type { Agent, AccountStatus, TaskPriority, Task } from './types';
+import type { Agent, AccountStatus, TaskPriority, Task, GeocodeResult, GeocodeSuggestion } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3011';
 
@@ -119,6 +119,65 @@ export function dispatchTask(payload: DispatchPayload, token: string) {
 // "active tasks after a dashboard refresh" and full task history in one shot.
 export function getOrgTasks(token: string) {
   return request<Task[]>('/api/org/tasks', {
+    headers: authHeader(token),
+  });
+}
+
+export interface UpdateTaskPayload {
+  description?: string;
+  priority?: TaskPriority;
+  radiusMeters?: number;
+  destLat?: number;
+  destLng?: number;
+}
+
+// Backend rejects this for a completed/rejected task — only pending/accepted/
+// in_progress/reached tasks are editable.
+export function updateTask(taskId: string, payload: UpdateTaskPayload, token: string) {
+  return request<Task>('/api/task/update', {
+    method: 'POST',
+    headers: authHeader(token),
+    body: JSON.stringify({ taskId, ...payload }),
+  });
+}
+
+export function deleteTask(taskId: string, token: string) {
+  return request<{ ok: boolean }>('/api/task/delete', {
+    method: 'POST',
+    headers: authHeader(token),
+    body: JSON.stringify({ taskId }),
+  });
+}
+
+// Address/place-name typeahead for the dispatch modal's destination picker.
+// Empty/short queries are cheap no-ops server-side, but callers should still
+// debounce — this fires a real upstream request per call. `proximity` biases
+// ranking toward that point (nearest-first) — omit it for a plain search.
+// `sessionToken` must stay the same across every suggest call and the
+// eventual geocodeRetrieve for one search (Mapbox's session/billing model) —
+// mint a fresh one per search session, not per keystroke.
+export function geocodeSuggest(
+  query: string,
+  sessionToken: string,
+  token: string,
+  proximity?: { lat: number; lng: number }
+) {
+  const params = new URLSearchParams({ q: query, sessionToken });
+  if (proximity) {
+    params.set('lat', String(proximity.lat));
+    params.set('lng', String(proximity.lng));
+  }
+  return request<GeocodeSuggestion[]>(`/api/geocode/suggest?${params.toString()}`, {
+    headers: authHeader(token),
+  });
+}
+
+// Resolves one chosen suggestion to real coordinates. Only needed for
+// suggestions that didn't already carry lat/lng (see GeocodeSuggestion) —
+// callers should skip this call entirely when they did.
+export function geocodeRetrieve(id: string, sessionToken: string, token: string) {
+  const params = new URLSearchParams({ id, sessionToken });
+  return request<GeocodeResult>(`/api/geocode/retrieve?${params.toString()}`, {
     headers: authHeader(token),
   });
 }

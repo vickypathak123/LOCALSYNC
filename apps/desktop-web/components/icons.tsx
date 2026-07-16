@@ -196,6 +196,16 @@ export function DotsIcon({ className = base }: IconProps) {
   );
 }
 
+export function LayersIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3.5l8.5 4.5-8.5 4.5-8.5-4.5L12 3.5Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 12l8.5 4.5 8.5-4.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 15.5L12 20l8.5-4.5" />
+    </svg>
+  );
+}
+
 export function NavigationIcon({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>

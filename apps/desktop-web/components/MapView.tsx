@@ -1,12 +1,13 @@
 'use client';
 
-import { Fragment } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMapEvents } from 'react-leaflet';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { Agent, TaskUI } from '@/lib/types';
 import { AgentStatusBadge, TaskStatusBadge } from './StatusBadge';
 import { deriveAgentStatus } from '@/lib/agentStatus';
 import { colorForName, initialsForName } from '@/lib/avatar';
+import { LayersIcon } from './icons';
 
 // Last line of defense: even with the backend/state-layer fixes that stop
 // malformed task records from ever being written, this guard means Leaflet can
@@ -91,6 +92,31 @@ function ClickCapture({ enabled, onPick }: { enabled: boolean; onPick: (lat: num
   return null;
 }
 
+// Pans to a newly-picked location that didn't come from a map click (e.g. a
+// geocoded search result) — a manual pin-drop click needs no pan, the user is
+// already looking at that spot, so this only fires again when the coordinates
+// actually change rather than on every render.
+function FlyToPicked({ location }: { location: { lat: number; lng: number } | null }) {
+  const map = useMap();
+  const lastKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!location) return;
+    const key = `${location.lat},${location.lng}`;
+    if (lastKeyRef.current === key) return;
+    lastKeyRef.current = key;
+    map.flyTo([location.lat, location.lng], Math.max(map.getZoom(), 15), { duration: 1 });
+  }, [location, map]);
+
+  return null;
+}
+
+const SATELLITE_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const SATELLITE_ATTRIBUTION =
+  'Tiles &copy; Esri &mdash; Esri, Maxar, Earthstar Geographics, and the GIS User Community';
+const STREET_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const STREET_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
 interface MapViewProps {
   agents: Agent[];
   tasksById: Record<string, TaskUI>;
@@ -115,14 +141,26 @@ export default function MapView({
 }: MapViewProps) {
   const firstOnline = agents.find((a) => a.online && isValidLatLng(a.lat, a.lng) && (a.lat || a.lng));
   const center: [number, number] = firstOnline ? [firstOnline.lat, firstOnline.lng] : DEFAULT_CENTER;
+  const [satellite, setSatellite] = useState(false);
 
   return (
     <MapContainer center={center} zoom={13} className="h-full w-full" scrollWheelZoom>
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        key={satellite ? 'satellite' : 'street'}
+        attribution={satellite ? SATELLITE_ATTRIBUTION : STREET_ATTRIBUTION}
+        url={satellite ? SATELLITE_TILE_URL : STREET_TILE_URL}
       />
+      <button
+        type="button"
+        onClick={() => setSatellite((v) => !v)}
+        aria-pressed={satellite}
+        className="absolute right-4 top-4 z-[500] flex items-center gap-1.5 rounded-full border border-border bg-white/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-elevation-2 backdrop-blur transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-100 dark:hover:bg-slate-800"
+      >
+        <LayersIcon className="h-3.5 w-3.5" />
+        {satellite ? 'Street' : 'Satellite'}
+      </button>
       <ClickCapture enabled={pickMode} onPick={onPickLocation} />
+      <FlyToPicked location={pickedLocation} />
 
       {agents.map((agent) => {
         const task = agent.currentTaskId ? tasksById[agent.currentTaskId] : undefined;

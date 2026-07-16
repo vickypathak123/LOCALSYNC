@@ -15,10 +15,15 @@ interface TrackingPanelProps {
   onClose: () => void;
   onAssignTask: () => void;
   onViewHistory: () => void;
+  // Agent management — only relevant/shown in the agent-only view (no active task).
   onEdit: () => void;
   onResendInvite: () => Promise<void>;
   onToggleArchive: () => Promise<void>;
   onDelete: () => void;
+  // Task management — shown instead, while viewing a task that isn't
+  // completed/rejected yet (matches the backend's edit/delete guard).
+  onUpdateTask: () => void;
+  onDeleteTask: () => void;
 }
 
 const TASK_STATUS_LABEL: Record<string, string> = {
@@ -29,6 +34,8 @@ const TASK_STATUS_LABEL: Record<string, string> = {
   reached: 'Destination reached',
   completed: 'Completed',
 };
+
+const TERMINAL_TASK_STATUSES = ['completed', 'rejected'];
 
 function TelemetryRow({ label, value }: { label: string; value: string }) {
   return (
@@ -66,10 +73,13 @@ export default function TrackingPanel({
   onResendInvite,
   onToggleArchive,
   onDelete,
+  onUpdateTask,
+  onDeleteTask,
 }: TrackingPanelProps) {
   const status = deriveAgentStatus(agent, task);
   const canDispatch = agent.online && agent.status === 'available' && !agent.isArchived;
   const now = useNowTick();
+  const taskIsEditable = !!task && !TERMINAL_TASK_STATUSES.includes(task.status);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -264,42 +274,68 @@ export default function TrackingPanel({
               View Full History
             </button>
 
-            <div className="flex items-center gap-1.5 pt-1">
-              {agent.accountStatus === 'invited' && (
+            {task ? (
+              // Task-centric view: manage the task being tracked, not the
+              // agent — editing/archiving/deleting the agent record doesn't
+              // belong here, and only makes sense once no task is selected.
+              taskIsEditable && (
+                <div className="flex items-center gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={onUpdateTask}
+                    title="Update task"
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted dark:hover:bg-slate-800"
+                  >
+                    <EditIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onDeleteTask}
+                    title="Delete task"
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              )
+            ) : (
+              <div className="flex items-center gap-1.5 pt-1">
+                {agent.accountStatus === 'invited' && (
+                  <button
+                    type="button"
+                    onClick={() => onResendInvite()}
+                    title="Resend invite"
+                    className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted dark:hover:bg-slate-800"
+                  >
+                    <RefreshIcon className="h-4 w-4" />
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => onResendInvite()}
-                  title="Resend invite"
+                  onClick={onEdit}
+                  title="Edit agent"
                   className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted dark:hover:bg-slate-800"
                 >
-                  <RefreshIcon className="h-4 w-4" />
+                  <EditIcon className="h-4 w-4" />
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={onEdit}
-                title="Edit agent"
-                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted dark:hover:bg-slate-800"
-              >
-                <EditIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleArchive()}
-                title={agent.isArchived ? 'Restore agent' : 'Archive agent'}
-                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted dark:hover:bg-slate-800"
-              >
-                <ArchiveIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onDelete}
-                title="Delete agent"
-                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10"
-              >
-                <TrashIcon className="h-4 w-4" />
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => onToggleArchive()}
+                  title={agent.isArchived ? 'Restore agent' : 'Archive agent'}
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted dark:hover:bg-slate-800"
+                >
+                  <ArchiveIcon className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  title="Delete agent"
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

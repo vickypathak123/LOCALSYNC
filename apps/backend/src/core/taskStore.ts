@@ -178,6 +178,53 @@ export function computeDistanceAndEta(
   return { distance, eta };
 }
 
+// Owner-initiated edits (dashboard Task Details panel) — deliberately scoped
+// to non-terminal tasks only; there's nothing sensible to "update" on a task
+// that's already completed/rejected, and the route/geofence-recompute side
+// effects below assume the task is still actually being tracked.
+export async function updateTaskDetails(
+  taskId: string,
+  updates: { description?: string; priority?: TaskPriority; radiusMeters?: number; destLat?: number; destLng?: number }
+): Promise<void> {
+  const fields: Record<string, string> = {};
+  if (updates.description !== undefined) fields.description = updates.description;
+  if (updates.priority !== undefined) fields.priority = updates.priority;
+  if (updates.radiusMeters !== undefined) fields.radiusMeters = updates.radiusMeters.toString();
+  if (updates.destLat !== undefined) fields.destLat = updates.destLat.toString();
+  if (updates.destLng !== undefined) fields.destLng = updates.destLng.toString();
+
+  // A destination/radius change invalidates whatever route was computed
+  // against the old one — clear the cached route (and its recompute-throttle
+  // state) so the next location:update fetches a fresh one against the new
+  // target instead of continuing to show a route to the old destination.
+  if (updates.destLat !== undefined || updates.destLng !== undefined || updates.radiusMeters !== undefined) {
+    fields.routeGeometry = '';
+    fields.routeDistanceMeters = '';
+    fields.routeDurationSeconds = '';
+    fields.routeComputedAt = '';
+    fields.routeComputedFromLat = '';
+    fields.routeComputedFromLng = '';
+  }
+
+  if (Object.keys(fields).length > 0) {
+    await redisClient.hSet(`task:${taskId}`, fields);
+  }
+}
+
+// Hard delete — scoped to non-terminal tasks (see the /api/task/delete route
+// guard), unlike agents/other records nothing here is meant to survive as
+// history: a deleted task is one the owner decided shouldn't have existed,
+// not a completed one being pruned. Clears the agent's currentTaskId and
+// reverts their status so they're immediately assignable again rather than
+// stuck "busy" pointing at a task that no longer exists.
+export async function deleteTask(taskId: string, agentId: string): Promise<void> {
+  await redisClient.del(`task:${taskId}`);
+  const agentRaw = await redisClient.hGetAll(`agent:${agentId}`);
+  if (agentRaw.currentTaskId === taskId) {
+    await redisClient.hSet(`agent:${agentId}`, { currentTaskId: '', status: 'available' });
+  }
+}
+
 // Full task history for an org — every task hash lives forever in Redis (never
 // deleted), so this doubles as both "restore active tasks after a refresh" and
 // "task history" with zero extra storage. orgId is stamped on the hash at

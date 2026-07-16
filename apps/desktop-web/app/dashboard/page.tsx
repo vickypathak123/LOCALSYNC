@@ -14,10 +14,13 @@ import {
   archiveAgent,
   restoreAgent,
   deleteAgent,
+  updateTask,
+  deleteTask,
   getOrgMe,
   getOrgTasks,
   type OrgInfo,
   type UpdateAgentPayload,
+  type UpdateTaskPayload,
 } from '@/lib/api';
 import { getSession, clearSession, type Session } from '@/lib/auth';
 import type { Agent, TaskUI, TaskStatus } from '@/lib/types';
@@ -32,6 +35,7 @@ import TrackingPanel from '@/components/TrackingPanel';
 import DispatchModal from '@/components/DispatchModal';
 import InviteAgentModal from '@/components/InviteAgentModal';
 import EditAgentModal from '@/components/EditAgentModal';
+import EditTaskModal from '@/components/EditTaskModal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import OrgPanel from '@/components/OrgPanel';
 import ToastStack, { type ToastMessage } from '@/components/Toast';
@@ -76,6 +80,8 @@ export default function DashboardPage() {
   const [orgModalOpen, setOrgModalOpen] = useState(false);
   const [editAgentTarget, setEditAgentTarget] = useState<Agent | null>(null);
   const [deleteAgentTarget, setDeleteAgentTarget] = useState<Agent | null>(null);
+  const [editTaskTarget, setEditTaskTarget] = useState<TaskUI | null>(null);
+  const [deleteTaskTarget, setDeleteTaskTarget] = useState<TaskUI | null>(null);
   const [orgInfo, setOrgInfo] = useState<OrgInfo | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [notifications, setNotifications] = useState<ToastMessage[]>([]);
@@ -374,6 +380,26 @@ export default function DashboardPage() {
       pushEvent('Agent Approved', name, 'Can now log in', 'bg-status-verified');
     });
 
+    // Broadcast (not a targeted response) so every connected owner session —
+    // not just the one that made the edit — stays in sync if more than one
+    // dashboard tab/owner is open at once.
+    socket.on('task:updated:broadcast', (updated: TaskUI) => {
+      setTasksById((prev) => (prev[updated.taskId] ? { ...prev, [updated.taskId]: { ...prev[updated.taskId], ...updated } } : prev));
+    });
+
+    socket.on('task:deleted:broadcast', ({ taskId, agentId }: { taskId: string; agentId: string }) => {
+      setTasksById((prev) => {
+        if (!prev[taskId]) return prev;
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
+      setAgents((prev) =>
+        prev.map((a) => (a.agentId === agentId && a.currentTaskId === taskId ? { ...a, currentTaskId: null, status: 'available' } : a))
+      );
+      setSelectedTaskId((current) => (current === taskId ? null : current));
+    });
+
     return () => {
       socket.off('agents:sync');
       socket.off('location:broadcast');
@@ -382,6 +408,8 @@ export default function DashboardPage() {
       socket.off('task:completed:broadcast');
       socket.off('agent:activated');
       socket.off('agent:approved');
+      socket.off('task:updated:broadcast');
+      socket.off('task:deleted:broadcast');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, pushToast, pushEvent]);
@@ -594,6 +622,34 @@ export default function DashboardPage() {
     setDeleteAgentTarget(null);
   }
 
+  async function handleUpdateTask(payload: UpdateTaskPayload) {
+    if (!session || !editTaskTarget) return;
+    const updated = await updateTask(editTaskTarget.taskId, payload, session.token);
+    setTasksById((prev) => ({ ...prev, [updated.taskId]: { ...prev[updated.taskId], ...updated } }));
+    setEditTaskTarget(null);
+    pushToast('Task updated', `TK-${updated.taskId.slice(0, 6).toUpperCase()} was saved.`);
+  }
+
+  async function handleConfirmDeleteTask() {
+    if (!session || !deleteTaskTarget) return;
+    await deleteTask(deleteTaskTarget.taskId, session.token);
+    setTasksById((prev) => {
+      const next = { ...prev };
+      delete next[deleteTaskTarget.taskId];
+      return next;
+    });
+    setAgents((prev) =>
+      prev.map((a) =>
+        a.agentId === deleteTaskTarget.agentId && a.currentTaskId === deleteTaskTarget.taskId
+          ? { ...a, currentTaskId: null, status: 'available' }
+          : a
+      )
+    );
+    if (selectedTaskId === deleteTaskTarget.taskId) clearSelection();
+    pushToast('Task deleted', `TK-${deleteTaskTarget.taskId.slice(0, 6).toUpperCase()} was removed.`);
+    setDeleteTaskTarget(null);
+  }
+
   function handleViewHistory(agent: Agent) {
     setLeftTab('tasks');
     setSearchQuery(agent.name);
@@ -718,6 +774,8 @@ export default function DashboardPage() {
               onResendInvite={() => handleResendInvite(panelAgent.agentId)}
               onToggleArchive={() => handleToggleArchive(panelAgent)}
               onDelete={() => setDeleteAgentTarget(panelAgent)}
+              onUpdateTask={() => panelTask && setEditTaskTarget(panelTask)}
+              onDeleteTask={() => panelTask && setDeleteTaskTarget(panelTask)}
             />
           ) : (
             <ActivityFeed events={events} />
@@ -729,9 +787,11 @@ export default function DashboardPage() {
         <DispatchModal
           agent={dispatchPreselectedAgent}
           agents={agents}
+          token={session.token}
           pickedLocation={pickedLocation}
           pickMode={pickMode}
           onTogglePickMode={() => setPickMode((v) => !v)}
+          onPickLocation={handlePickLocation}
           onClose={closeDispatch}
           onSubmit={handleDispatchSubmit}
         />
@@ -759,6 +819,25 @@ export default function DashboardPage() {
           destructive
           onConfirm={handleConfirmDelete}
           onCancel={() => setDeleteAgentTarget(null)}
+        />
+      )}
+
+      {editTaskTarget && (
+        <EditTaskModal
+          task={editTaskTarget}
+          onClose={() => setEditTaskTarget(null)}
+          onSubmit={handleUpdateTask}
+        />
+      )}
+
+      {deleteTaskTarget && (
+        <ConfirmDialog
+          title="Delete task"
+          body={`Permanently remove TK-${deleteTaskTarget.taskId.slice(0, 6).toUpperCase()} ("${deleteTaskTarget.description || 'Untitled task'}")? The assigned agent will be freed up immediately. This cannot be undone.`}
+          confirmLabel="Delete"
+          destructive
+          onConfirm={handleConfirmDeleteTask}
+          onCancel={() => setDeleteTaskTarget(null)}
         />
       )}
 

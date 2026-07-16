@@ -91,6 +91,14 @@ Show a task alert with Accept/Reject buttons. On Accept, transition the app to a
 
 **Additive field:** `priority` was added after the initial freeze (dashboard task-priority feature). It always defaults to `"medium"` server-side if the owner's dashboard doesn't set one, so it's always present — safe to ignore if the Android app doesn't display it yet.
 
+**⚠️ Addendum — also re-sent on owner edit:** if the owner edits a task's destination/radius/description/priority from the dashboard (only possible before the task is completed/rejected), the backend re-emits this same `task:dispatch` event to the assigned agent with the updated values. Treat it the same as the original — refresh whatever destination/radius/description you're currently showing. This is best-effort for Android; the owner's dashboard doesn't depend on you handling it.
+
+### `task:cancelled` *(new — addendum)*
+```json
+{ "taskId": "string" }
+```
+Sent when the owner deletes a task from the dashboard (only possible before it's completed/rejected). Stop navigation/tracking for this task and return to the idle/available screen — the task no longer exists server-side, so `task:complete`/`task:reject` for this `taskId` will fail. Best-effort for Android; not required to demo the owner-side flow.
+
 ### `task:complete:rejected` *(new — addendum, see task:complete above)*
 ```json
 { "taskId": "string", "reason": "delay_reason_required", "message": "string (show this directly to the user)" }
