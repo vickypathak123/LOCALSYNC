@@ -146,10 +146,19 @@ export default function MapView({
           <Fragment key={agent.agentId}>
             {isActive && task && agentLocationValid && (
               roadPath && roadPath.length > 1 ? (
-                <Polyline
-                  positions={roadPath}
-                  pathOptions={{ color: '#2563EB', weight: 4, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }}
-                />
+                // Layered "casing" line — a wider, lighter stroke underneath the
+                // solid route — is what makes Google/Uber-style routes read as
+                // one confident line instead of a thin wire on the map.
+                <>
+                  <Polyline
+                    positions={roadPath}
+                    pathOptions={{ color: '#2563EB', weight: 9, opacity: 0.18, lineCap: 'round', lineJoin: 'round' }}
+                  />
+                  <Polyline
+                    positions={roadPath}
+                    pathOptions={{ color: '#2563EB', weight: 5, opacity: 1, lineCap: 'round', lineJoin: 'round' }}
+                  />
+                </>
               ) : (
                 // No road route yet (still computing, or no routing provider configured) —
                 // fall back to the straight-line estimate so tracking never blocks on it.

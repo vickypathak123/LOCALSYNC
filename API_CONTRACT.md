@@ -69,9 +69,17 @@ Send when user taps "Reject".
 
 ### `task:complete`
 ```json
-{ "agentId": "string", "taskId": "string" }
+{ "agentId": "string", "taskId": "string", "delayReason": "string (optional, see below)" }
 ```
 Send when user taps "Complete" on the destination-tracking screen.
+
+**⚠️ Addendum — delay grace period + mandatory reason (breaking change):** the backend now computes a fixed `estimatedArrivalAt` (acceptance time + the first ETA it saw) per task and tracks a 15-minute grace period past it. If more than 15 minutes have elapsed since `estimatedArrivalAt` when Complete is tapped, **this event is rejected** — the task does *not* complete, and the backend replies with `task:complete:rejected` (see below) instead of `task:completed:broadcast`. Show a "Why the delay?" text prompt in that case, collect a reason, and resend `task:complete` with `delayReason` filled in. Outside the grace period, `delayReason` is optional and ignored if sent.
+
+### `task:reached:broadcast` *(optional to show, but nice if you have time)*
+```json
+{ "agentId": "string", "taskId": "string" }
+```
+Backend detected the agent entered the geofence — you can show a small "You've arrived" banner, then let the user tap Complete.
 
 ## Socket Events — Android LISTENS
 
@@ -83,11 +91,11 @@ Show a task alert with Accept/Reject buttons. On Accept, transition the app to a
 
 **Additive field:** `priority` was added after the initial freeze (dashboard task-priority feature). It always defaults to `"medium"` server-side if the owner's dashboard doesn't set one, so it's always present — safe to ignore if the Android app doesn't display it yet.
 
-### `task:reached:broadcast` *(optional to show, but nice if you have time)*
+### `task:complete:rejected` *(new — addendum, see task:complete above)*
 ```json
-{ "agentId": "string", "taskId": "string" }
+{ "taskId": "string", "reason": "delay_reason_required", "message": "string (show this directly to the user)" }
 ```
-Backend detected the agent entered the geofence — you can show a small "You've arrived" banner, then let the user tap Complete.
+Sent **to the completing agent only** (not broadcast) when `task:complete` is rejected for missing a delay reason past the grace period. Prompt for a reason and resend `task:complete` with `delayReason` set — there's no retry limit.
 
 ## Notes
 - No JWT verification happens on socket events — once logged in via REST, all socket messages just use plain `agentId`. This is a deliberate hackathon time-saving simplification, not an oversight.

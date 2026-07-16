@@ -1,4 +1,14 @@
-export type { Agent, AgentStatus, AccountStatus, Task, TaskStatus, TaskPriority, RoadRoute } from '../../../packages/shared-types';
+export type {
+  Agent,
+  AgentStatus,
+  AccountStatus,
+  Task,
+  TaskStatus,
+  TaskPriority,
+  RoadRoute,
+  TaskDelayStatus,
+} from '../../../packages/shared-types';
+export { computeTaskDelayStatus, DELAY_GRACE_PERIOD_MINUTES } from '../../../packages/shared-types';
 import type { Task } from '../../../packages/shared-types';
 
 // Client-side view of a task, extended with the live distance/ETA figures that

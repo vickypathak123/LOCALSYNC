@@ -8,17 +8,17 @@ import {
   setTaskRoute,
   getRouteRecomputeState,
   shouldRecomputeRoute,
+  setTaskEstimatedArrival,
+  setTaskDelayReason,
 } from './taskStore';
-import { fetchRoadRoute, isRoutingConfigured } from './routingService';
-import type { RoadRoute, Task } from '../../../../packages/shared-types';
+import { fetchRoadRoute } from './routingService';
+import { computeTaskDelayStatus, type RoadRoute, type Task } from '../../../../packages/shared-types';
 
 // Road route is additive to the existing Haversine-based tracking: computed
 // lazily, throttled, and never allowed to block or fail the location:update
-// heartbeat — if no provider is configured or the request fails, callers just
-// keep the task's last-known route (or null, falling back to a straight line).
+// heartbeat — if both providers fail, callers just keep the task's last-known
+// route (or null, falling back to a straight line).
 async function resolveRoute(task: Task, lat: number, lng: number): Promise<RoadRoute | null> {
-  if (!isRoutingConfigured()) return task.route;
-
   const recomputeState = await getRouteRecomputeState(task.taskId);
   if (!shouldRecomputeRoute(recomputeState, lat, lng)) return task.route;
 
@@ -73,7 +73,17 @@ export function registerSocketHandlers(io: Server): void {
                 io.emit('task:reached:broadcast', { agentId, taskId: task.taskId });
               }
               const route = await resolveRoute(task, lat, lng);
-              io.emit('location:broadcast', { agent, distance, eta, route });
+
+              // Fixed once — the first tick after acceptance where an ETA is
+              // known. Anchored on acceptedAt (not "now") per the product
+              // requirement that this target never drifts on refresh/re-route.
+              let estimatedArrivalAt = task.estimatedArrivalAt;
+              if (estimatedArrivalAt === null && task.acceptedAt !== null) {
+                estimatedArrivalAt = task.acceptedAt + eta * 1000;
+                await setTaskEstimatedArrival(task.taskId, estimatedArrivalAt);
+              }
+
+              io.emit('location:broadcast', { agent, distance, eta, route, estimatedArrivalAt });
               return;
             }
           }
@@ -104,23 +114,50 @@ export function registerSocketHandlers(io: Server): void {
       }
     });
 
-    socket.on('task:complete', async ({ agentId, taskId }: { agentId: string; taskId: string }) => {
-      try {
-        const agent = await getAgent(agentId);
-        const task = await getTask(taskId);
-        if (!agent || !task) return;
+    socket.on(
+      'task:complete',
+      async ({ agentId, taskId, delayReason }: { agentId: string; taskId: string; delayReason?: string }) => {
+        try {
+          const agent = await getAgent(agentId);
+          const task = await getTask(taskId);
+          if (!agent || !task) return;
 
-        const { distance } = computeDistanceAndEta(agent.lat, agent.lng, task);
-        const geoVerified = distance <= task.radiusMeters;
+          // Past the grace period, a reason is mandatory before the task can
+          // close out — either just submitted, or already on file from an
+          // earlier attempt (so retrying with the same reason isn't rejected
+          // again). Rejecting here (rather than silently completing anyway) is
+          // what makes the requirement actually enforced instead of advisory.
+          const delayStatus = computeTaskDelayStatus(task.estimatedArrivalAt);
+          const hasReason = !!(delayReason?.trim() || task.delayReason);
+          if (delayStatus === 'delayed' && !hasReason) {
+            io.to(agentId).emit('task:complete:rejected', {
+              taskId,
+              reason: 'delay_reason_required',
+              message: 'This task is past its grace period — submit a delay reason before marking it complete.',
+            });
+            return;
+          }
+          if (delayReason?.trim()) {
+            await setTaskDelayReason(taskId, delayReason.trim());
+          }
 
-        await setTaskGeoVerified(taskId, geoVerified);
-        await setTaskStatus(taskId, 'completed');
-        await setAgentStatus(agentId, 'available');
+          const { distance } = computeDistanceAndEta(agent.lat, agent.lng, task);
+          const geoVerified = distance <= task.radiusMeters;
 
-        io.emit('task:completed:broadcast', { agentId, taskId, geoVerified });
-      } catch (err: any) {
-        console.error('[socket] task:complete error:', err.message);
+          await setTaskGeoVerified(taskId, geoVerified);
+          await setTaskStatus(taskId, 'completed');
+          await setAgentStatus(agentId, 'available');
+
+          io.emit('task:completed:broadcast', {
+            agentId,
+            taskId,
+            geoVerified,
+            delayReason: delayReason?.trim() || task.delayReason || null,
+          });
+        } catch (err: any) {
+          console.error('[socket] task:complete error:', err.message);
+        }
       }
-    });
+    );
   });
 }

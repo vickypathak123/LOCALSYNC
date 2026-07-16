@@ -52,6 +52,8 @@ export async function createTask(
     routeComputedAt: '',
     routeComputedFromLat: '',
     routeComputedFromLng: '',
+    estimatedArrivalAt: '',
+    delayReason: '',
   });
   await redisClient.hSet(`agent:${agentId}`, { currentTaskId: taskId });
 }
@@ -79,6 +81,8 @@ function parseTask(taskId: string, raw: Record<string, string>): Task {
           durationSeconds: parseFloat(raw.routeDurationSeconds) || 0,
         }
       : null,
+    estimatedArrivalAt: raw.estimatedArrivalAt ? parseInt(raw.estimatedArrivalAt, 10) : null,
+    delayReason: raw.delayReason || null,
   };
 }
 
@@ -108,6 +112,18 @@ export async function setTaskStatus(taskId: string, status: TaskStatus): Promise
 
 export async function setTaskGeoVerified(taskId: string, verified: boolean): Promise<void> {
   await redisClient.hSet(`task:${taskId}`, { geoVerified: verified.toString() });
+}
+
+// Set exactly once — the first time a task has both an acceptedAt and a known
+// ETA (the first location:update tick after task:accept). Never overwritten
+// after that, which is what makes it a stable target instead of a live
+// countdown that reshuffles on every refresh or route recompute.
+export async function setTaskEstimatedArrival(taskId: string, estimatedArrivalAt: number): Promise<void> {
+  await redisClient.hSet(`task:${taskId}`, { estimatedArrivalAt: estimatedArrivalAt.toString() });
+}
+
+export async function setTaskDelayReason(taskId: string, reason: string): Promise<void> {
+  await redisClient.hSet(`task:${taskId}`, { delayReason: reason });
 }
 
 export async function setTaskRoute(

@@ -28,7 +28,7 @@ import CommandHeader from '@/components/CommandHeader';
 import AgentRosterList from '@/components/AgentRosterList';
 import TaskRosterList from '@/components/TaskRosterList';
 import ActivityFeed from '@/components/ActivityFeed';
-import AgentDetailsPanel from '@/components/AgentDetailsPanel';
+import TrackingPanel from '@/components/TrackingPanel';
 import DispatchModal from '@/components/DispatchModal';
 import InviteAgentModal from '@/components/InviteAgentModal';
 import EditAgentModal from '@/components/EditAgentModal';
@@ -50,12 +50,23 @@ const NON_TERMINAL: TaskStatus[] = ['pending', 'accepted', 'in_progress', 'reach
 
 type LeftTab = 'agents' | 'tasks';
 
+// Persists which task (or, absent a task, which agent) the owner has open in
+// the tracking panel — restored on load so a refresh resumes the same view
+// instead of dropping back to the Activity Feed.
+const SELECTION_STORAGE_KEY = 'localsync_selection';
+type StoredSelection = { type: 'task' | 'agent'; id: string };
+
 export default function DashboardPage() {
   const router = useRouter();
   const [session, setLocalSession] = useState<Session | null>(null);
   const [leftTab, setLeftTab] = useState<LeftTab>('agents');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasksById, setTasksById] = useState<Record<string, TaskUI>>({});
+  // Task selection is primary — tracking is centered on the task, since that's
+  // what the owner actually cares about following. selectedAgentId is only a
+  // fallback for agents with no active task to select (nothing task-shaped to
+  // show yet, but still useful to see their info / assign one).
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [dispatchAgentId, setDispatchAgentId] = useState<string | null>(null);
@@ -84,6 +95,11 @@ export default function DashboardPage() {
   useEffect(() => {
     agentsRef.current = agents;
   }, [agents]);
+  // Guards the persist-selection effect below from firing on the initial
+  // render (selectedTaskId/selectedAgentId both start null) — without this,
+  // it clears localStorage before the restore effect (gated on the async
+  // `session` load) ever gets a chance to read the saved selection back.
+  const hasRestoredSelectionRef = useRef(false);
 
   const pushToast = useCallback((title: string, body: string) => {
     const message = { id: crypto.randomUUID(), title, body };
@@ -117,6 +133,37 @@ export default function DashboardPage() {
     }
     setLocalSession(s);
   }, [router]);
+
+  // Restore whatever the owner had selected before a refresh. tasksById/agents
+  // haven't loaded yet at this point — that's fine, selectedTask/selectedAgent
+  // below are derived reactively and resolve themselves the moment the
+  // rehydration fetch (below) and agents:sync land.
+  useEffect(() => {
+    if (!session) return;
+    try {
+      const raw = window.localStorage.getItem(SELECTION_STORAGE_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw) as StoredSelection;
+        if (stored.type === 'task') setSelectedTaskId(stored.id);
+        else if (stored.type === 'agent') setSelectedAgentId(stored.id);
+      }
+    } catch {
+      window.localStorage.removeItem(SELECTION_STORAGE_KEY);
+    } finally {
+      hasRestoredSelectionRef.current = true;
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (!hasRestoredSelectionRef.current) return;
+    if (selectedTaskId) {
+      window.localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify({ type: 'task', id: selectedTaskId } satisfies StoredSelection));
+    } else if (selectedAgentId) {
+      window.localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify({ type: 'agent', id: selectedAgentId } satisfies StoredSelection));
+    } else {
+      window.localStorage.removeItem(SELECTION_STORAGE_KEY);
+    }
+  }, [selectedTaskId, selectedAgentId]);
 
   useEffect(() => {
     if (!session) return;
@@ -182,7 +229,7 @@ export default function DashboardPage() {
       setAgents(scoped);
     });
 
-    socket.on('location:broadcast', ({ agent, distance, eta, route }: { agent: Agent; distance?: number; eta?: number; route?: import('@/lib/types').RoadRoute | null }) => {
+    socket.on('location:broadcast', ({ agent, distance, eta, route, estimatedArrivalAt }: { agent: Agent; distance?: number; eta?: number; route?: import('@/lib/types').RoadRoute | null; estimatedArrivalAt?: number | null }) => {
       if (agent.orgId !== session.orgId) return;
       setAgents((prev) => {
         const idx = prev.findIndex((a) => a.agentId === agent.agentId);
@@ -236,6 +283,10 @@ export default function DashboardPage() {
               // (undefined when routing isn't configured at all) — never clobber
               // an already-known route with nothing.
               route: route !== undefined ? route : existing.route,
+              // Fixed once server-side and never reset — this is intentionally
+              // NOT overwritten with a fresh Date.now()-based guess client-side,
+              // that's exactly the drift bug this field exists to avoid.
+              estimatedArrivalAt: existing.estimatedArrivalAt ?? estimatedArrivalAt ?? null,
             },
           };
         });
@@ -265,7 +316,17 @@ export default function DashboardPage() {
 
     socket.on(
       'task:completed:broadcast',
-      ({ agentId, taskId, geoVerified }: { agentId: string; taskId: string; geoVerified: boolean }) => {
+      ({
+        agentId,
+        taskId,
+        geoVerified,
+        delayReason,
+      }: {
+        agentId: string;
+        taskId: string;
+        geoVerified: boolean;
+        delayReason?: string | null;
+      }) => {
         setTasksById((prev) =>
           prev[taskId]
             ? {
@@ -275,6 +336,7 @@ export default function DashboardPage() {
                   status: 'completed',
                   geoVerified,
                   completedAt: prev[taskId].completedAt ?? Date.now(),
+                  delayReason: delayReason ?? prev[taskId].delayReason,
                 },
               }
             : prev
@@ -335,20 +397,35 @@ export default function DashboardPage() {
     [agents, dispatchAgentId]
   );
 
-  const selectedAgent = useMemo(
-    () => agents.find((a) => a.agentId === selectedAgentId) ?? null,
-    [agents, selectedAgentId]
-  );
+  // Primary path: a task is selected (directly, or via clicking an agent who
+  // has one) — the panel is that task's tracking view, agent info folded in.
   const selectedTask = useMemo(
-    () => (selectedAgent?.currentTaskId ? tasksById[selectedAgent.currentTaskId] : undefined),
-    [selectedAgent, tasksById]
+    () => (selectedTaskId ? tasksById[selectedTaskId] : undefined),
+    [selectedTaskId, tasksById]
   );
+  const selectedTaskAgent = useMemo(
+    () => (selectedTask ? agents.find((a) => a.agentId === selectedTask.agentId) ?? null : null),
+    [selectedTask, agents]
+  );
+  // Fallback path: an agent with nothing currently assigned was clicked directly.
+  const selectedAgentOnly = useMemo(
+    () => (!selectedTask && selectedAgentId ? agents.find((a) => a.agentId === selectedAgentId) ?? null : null),
+    [selectedTask, selectedAgentId, agents]
+  );
+  const panelAgent = selectedTaskAgent ?? selectedAgentOnly;
+  const panelTask = selectedTaskAgent ? selectedTask : undefined;
+  // What the map/roster should visually highlight, regardless of which
+  // selection mode is active.
+  const highlightedAgentId = panelAgent?.agentId ?? null;
 
   const pendingApprovalAgents = useMemo(() => agents.filter((a) => a.accountStatus === 'pending_approval'), [agents]);
 
   const filteredAgents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return agents;
+    // Offline agents clutter the default live-ops view — hidden there, but an
+    // explicit search should still be able to find them (a lookup shouldn't
+    // silently exclude a real match just because they're not online right now).
+    if (!q) return agents.filter((a) => a.online);
     return agents.filter((a) => a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q));
   }, [agents, searchQuery]);
 
@@ -366,6 +443,30 @@ export default function DashboardPage() {
     setPickedLocation({ lat, lng });
     setPickMode(false);
   }, []);
+
+  // Clicking an agent selects their current task if they have one — tracking
+  // stays task-centric even when the entry point was the agent roster —
+  // falling back to an agent-only selection only when there's nothing to track.
+  function selectAgent(agentId: string) {
+    const agent = agents.find((a) => a.agentId === agentId);
+    if (agent?.currentTaskId && tasksById[agent.currentTaskId]) {
+      setSelectedTaskId(agent.currentTaskId);
+      setSelectedAgentId(null);
+    } else {
+      setSelectedAgentId(agentId);
+      setSelectedTaskId(null);
+    }
+  }
+
+  function selectTask(taskId: string) {
+    setSelectedTaskId(taskId);
+    setSelectedAgentId(null);
+  }
+
+  function clearSelection() {
+    setSelectedTaskId(null);
+    setSelectedAgentId(null);
+  }
 
   function openDispatchFor(agentId: string) {
     setDispatchAgentId(agentId);
@@ -414,8 +515,23 @@ export default function DashboardPage() {
         completedAt: null,
         rejectedAt: null,
         route: null,
+        estimatedArrivalAt: null,
+        delayReason: null,
       },
     }));
+
+    // The backend sets agent.currentTaskId immediately on dispatch, but that's
+    // a REST call — no socket event carries the updated Agent record until the
+    // agent's own next location tick (or later). Patch it locally now so
+    // "select this agent" resolves to their new task right away instead of
+    // needing a server round-trip that could be seconds away. Deliberately not
+    // touching agent.status here — deriveAgentStatus already renders a
+    // 'pending' task as "Busy" regardless of the raw status field, and the
+    // backend never reverts status on a reject, so flipping it optimistically
+    // could leave the agent stuck non-dispatchable if this task gets rejected.
+    setAgents((prev) =>
+      prev.map((a) => (a.agentId === payload.agentId ? { ...a, currentTaskId: res.taskId } : a))
+    );
 
     const agentName = agents.find((a) => a.agentId === payload.agentId)?.name || 'Agent';
     pushEvent('Task Assigned', agentName, payload.description || 'New task', 'bg-primary');
@@ -473,7 +589,7 @@ export default function DashboardPage() {
     if (!session || !deleteAgentTarget) return;
     await deleteAgent(deleteAgentTarget.agentId, session.token);
     setAgents((prev) => prev.filter((a) => a.agentId !== deleteAgentTarget.agentId));
-    if (selectedAgentId === deleteAgentTarget.agentId) setSelectedAgentId(null);
+    if (panelAgent?.agentId === deleteAgentTarget.agentId) clearSelection();
     pushToast('Agent deleted', `${deleteAgentTarget.name} was permanently removed from the organization.`);
     setDeleteAgentTarget(null);
   }
@@ -553,8 +669,8 @@ export default function DashboardPage() {
                 agents={filteredAgents}
                 pendingApprovalAgents={pendingApprovalAgents}
                 tasksById={tasksById}
-                selectedAgentId={selectedAgentId}
-                onSelectAgent={setSelectedAgentId}
+                selectedAgentId={highlightedAgentId}
+                onSelectAgent={selectAgent}
                 onApprove={handleApprove}
                 onReject={handleReject}
                 searchQuery={searchQuery}
@@ -564,8 +680,8 @@ export default function DashboardPage() {
               <TaskRosterList
                 tasks={filteredTasks}
                 agents={agents}
-                selectedAgentId={selectedAgentId}
-                onSelectAgent={setSelectedAgentId}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={selectTask}
                 onNewTask={openNewTask}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
@@ -578,8 +694,8 @@ export default function DashboardPage() {
           <MapView
             agents={agents}
             tasksById={tasksById}
-            selectedAgentId={selectedAgentId}
-            onSelectAgent={setSelectedAgentId}
+            selectedAgentId={highlightedAgentId}
+            onSelectAgent={selectAgent}
             pickMode={pickMode}
             pickedLocation={pickedLocation}
             onPickLocation={handlePickLocation}
@@ -591,17 +707,17 @@ export default function DashboardPage() {
         </div>
 
         <aside className="flex w-96 shrink-0 flex-col border-l border-border bg-white dark:border-slate-800 dark:bg-slate-900">
-          {selectedAgent ? (
-            <AgentDetailsPanel
-              agent={selectedAgent}
-              task={selectedTask}
-              onClose={() => setSelectedAgentId(null)}
-              onAssignTask={() => openDispatchFor(selectedAgent.agentId)}
-              onViewHistory={() => handleViewHistory(selectedAgent)}
-              onEdit={() => setEditAgentTarget(selectedAgent)}
-              onResendInvite={() => handleResendInvite(selectedAgent.agentId)}
-              onToggleArchive={() => handleToggleArchive(selectedAgent)}
-              onDelete={() => setDeleteAgentTarget(selectedAgent)}
+          {panelAgent ? (
+            <TrackingPanel
+              agent={panelAgent}
+              task={panelTask}
+              onClose={clearSelection}
+              onAssignTask={() => openDispatchFor(panelAgent.agentId)}
+              onViewHistory={() => handleViewHistory(panelAgent)}
+              onEdit={() => setEditAgentTarget(panelAgent)}
+              onResendInvite={() => handleResendInvite(panelAgent.agentId)}
+              onToggleArchive={() => handleToggleArchive(panelAgent)}
+              onDelete={() => setDeleteAgentTarget(panelAgent)}
             />
           ) : (
             <ActivityFeed events={events} />

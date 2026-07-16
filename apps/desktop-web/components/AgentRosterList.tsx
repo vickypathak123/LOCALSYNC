@@ -66,7 +66,8 @@ export default function AgentRosterList({
               const task = agent.currentTaskId ? tasksById[agent.currentTaskId] : undefined;
               const status = deriveAgentStatus(agent, task);
               const selected = agent.agentId === selectedAgentId;
-              const showDistance = task?.distance !== undefined && task.status === 'in_progress';
+              const rosterDistance = task?.route?.distanceMeters ?? task?.distance;
+              const showDistance = task?.status === 'in_progress' && rosterDistance !== undefined;
 
               return (
                 <li key={agent.agentId}>
@@ -98,7 +99,7 @@ export default function AgentRosterList({
                     </div>
                     {showDistance && (
                       <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground dark:text-slate-400">
-                        {formatDistance(task!.distance!)}
+                        {formatDistance(rosterDistance!)}
                       </span>
                     )}
                   </button>

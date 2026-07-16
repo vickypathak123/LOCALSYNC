@@ -8,6 +8,10 @@ export function formatEta(seconds: number): string {
   return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
 }
 
+export function formatClockTime(date: Date): string {
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 export function isToday(timestamp: number): boolean {
   const d = new Date(timestamp);
   const now = new Date();

@@ -2,15 +2,17 @@
 
 import type { Agent, TaskUI } from '@/lib/types';
 import Avatar from './Avatar';
+import DelayStatusBadge from './DelayStatusBadge';
 import { SearchIcon, TaskIcon } from './icons';
 import { TaskStatusBadge, PriorityBadge } from './StatusBadge';
 import { formatDistance } from '@/lib/format';
+import { useNowTick } from '@/lib/useNowTick';
 
 interface TaskRosterListProps {
   tasks: TaskUI[];
   agents: Agent[];
-  selectedAgentId: string | null;
-  onSelectAgent: (agentId: string) => void;
+  selectedTaskId: string | null;
+  onSelectTask: (taskId: string) => void;
   onNewTask: () => void;
   searchQuery: string;
   onSearchChange: (value: string) => void;
@@ -19,14 +21,15 @@ interface TaskRosterListProps {
 export default function TaskRosterList({
   tasks,
   agents,
-  selectedAgentId,
-  onSelectAgent,
+  selectedTaskId,
+  onSelectTask,
   onNewTask,
   searchQuery,
   onSearchChange,
 }: TaskRosterListProps) {
   const agentName = (agentId: string) => agents.find((a) => a.agentId === agentId)?.name || agentId.slice(0, 8);
   const sorted = [...tasks].sort((a, b) => b.createdAt - a.createdAt);
+  const now = useNowTick();
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -66,12 +69,12 @@ export default function TaskRosterList({
         ) : (
           <ul className="space-y-1.5">
             {sorted.map((task) => {
-              const selected = task.agentId === selectedAgentId;
+              const selected = task.taskId === selectedTaskId;
               return (
                 <li key={task.taskId}>
                   <button
                     type="button"
-                    onClick={() => onSelectAgent(task.agentId)}
+                    onClick={() => onSelectTask(task.taskId)}
                     className={`w-full cursor-pointer rounded-lg border p-2.5 text-left transition-colors ${
                       selected
                         ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
@@ -90,11 +93,16 @@ export default function TaskRosterList({
                     <p className="mb-1.5 line-clamp-2 text-xs text-muted-foreground dark:text-slate-400">
                       {task.description || 'No description'}
                     </p>
-                    <div className="flex items-center justify-between">
-                      <TaskStatusBadge status={task.status} />
-                      {task.distance !== undefined && task.status === 'in_progress' && (
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <TaskStatusBadge status={task.status} />
+                        {(task.status === 'in_progress' || task.status === 'reached') && (
+                          <DelayStatusBadge estimatedArrivalAt={task.estimatedArrivalAt} now={now} compact />
+                        )}
+                      </div>
+                      {task.status === 'in_progress' && (task.route?.distanceMeters ?? task.distance) !== undefined && (
                         <span className="font-mono text-[11px] tabular-nums text-accent">
-                          {formatDistance(task.route?.distanceMeters ?? task.distance)}
+                          {formatDistance((task.route?.distanceMeters ?? task.distance)!)}
                         </span>
                       )}
                     </div>

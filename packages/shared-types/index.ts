@@ -39,4 +39,32 @@ export interface Task {
   // in_progress), or if no routing provider is configured — callers must fall
   // back to the Haversine distance/eta in that case.
   route: RoadRoute | null;
+  // A fixed target, computed exactly once (acceptedAt + the first known ETA)
+  // the moment the agent starts moving — never recalculated as distance/eta
+  // change, so it doesn't drift every time the page reloads or the route gets
+  // re-fetched. Null until the agent has accepted and at least one location
+  // tick has landed.
+  estimatedArrivalAt: number | null;
+  // Required from the agent once a task passes the grace period past
+  // estimatedArrivalAt before it can be marked complete (see
+  // computeTaskDelayStatus / task:complete's enforcement in socketHandlers.ts).
+  delayReason: string | null;
+}
+
+export const DELAY_GRACE_PERIOD_MINUTES = 15;
+
+export type TaskDelayStatus = 'on_time' | 'grace_period' | 'delayed';
+
+// Pure and shared so the backend (enforcement) and frontend (display) can
+// never disagree about when a task is "delayed" — both import this instead of
+// each re-deriving their own copy of the grace-period math.
+export function computeTaskDelayStatus(
+  estimatedArrivalAt: number | null,
+  now: number = Date.now()
+): TaskDelayStatus | null {
+  if (!estimatedArrivalAt) return null;
+  const graceEndsAt = estimatedArrivalAt + DELAY_GRACE_PERIOD_MINUTES * 60 * 1000;
+  if (now <= estimatedArrivalAt) return 'on_time';
+  if (now <= graceEndsAt) return 'grace_period';
+  return 'delayed';
 }
